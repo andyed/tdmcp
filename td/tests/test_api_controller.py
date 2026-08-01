@@ -1139,6 +1139,7 @@ class StructuredEndpointTests(unittest.TestCase):
             "param_text": ac.param_text_service,
             "api": ac.api_service,
             "transport": ac.transport_service,
+            "watch": ac.watch_service,
             "system": ac.system_service,
             "project_analysis": ac.project_analysis_service,
             "custom_params": ac.custom_params_service,
@@ -1149,6 +1150,7 @@ class StructuredEndpointTests(unittest.TestCase):
         ac.param_text_service = mock.MagicMock(name="param_text_service")
         ac.api_service = mock.MagicMock(name="api_service")
         ac.transport_service = mock.MagicMock(name="transport_service")
+        ac.watch_service = mock.MagicMock(name="watch_service")
         ac.system_service = mock.MagicMock(name="system_service")
         ac.custom_params_service = mock.MagicMock(name="custom_params_service")
         ac.parameter_service = mock.MagicMock(name="parameter_service")
@@ -1159,6 +1161,7 @@ class StructuredEndpointTests(unittest.TestCase):
         ac.param_text_service = self._saved["param_text"]
         ac.api_service = self._saved["api"]
         ac.transport_service = self._saved["transport"]
+        ac.watch_service = self._saved["watch"]
         ac.system_service = self._saved["system"]
         ac.project_analysis_service = self._saved["project_analysis"]
         ac.custom_params_service = self._saved["custom_params"]
@@ -1203,6 +1206,23 @@ class StructuredEndpointTests(unittest.TestCase):
         with self.assertRaises(ValueError) as cm:
             ac._route("POST", "/api/transport", {}, {})
         self.assertIn("action", str(cm.exception))
+
+    def test_node_sample_dispatches_with_exec_disabled(self):
+        ac._route(
+            "POST",
+            "/api/node/sample",
+            {},
+            {
+                "path": "/project1/audio1",
+                "parameter_keys": ["gain"],
+                "channel_keys": ["left"],
+            },
+        )
+        ac.watch_service.sample.assert_called_once_with(
+            "/project1/audio1",
+            parameter_keys=["gain"],
+            channel_keys=["left"],
+        )
 
     def test_project_analysis_dispatches_with_exec_disabled(self):
         ac.project_analysis_service = mock.MagicMock(name="project_analysis_service")

@@ -9,7 +9,10 @@ import type { ToolContext } from "../../src/tools/types.js";
 import { silentLogger } from "../../src/utils/logger.js";
 
 function fakeCtx(exec: ReturnType<typeof vi.fn>): ToolContext {
-  return { client: { executePythonScript: exec }, logger: silentLogger } as unknown as ToolContext;
+  return {
+    client: { sampleNodeRuntime: exec, executePythonScript: vi.fn() },
+    logger: silentLogger,
+  } as unknown as ToolContext;
 }
 
 function dataOf(result: CallToolResult) {
@@ -46,41 +49,37 @@ describe("watchNodeImpl", () => {
       .mockImplementationOnce(async () => {
         vi.advanceTimersByTime(7);
         return {
-          stdout: JSON.stringify({
-            path: "/project1/audio1",
-            type: "audiodeviceinCHOP",
-            family: "CHOP",
-            state: {
-              cook_time_ms: 0.5,
-              cook_count: 10,
-              num_chans: 2,
-              num_samples: 512,
-              errors: [],
-            },
-            parameters: { active: true, gain: 0.8 },
-            channels: { chan1: 0.25, chan2: 0.75 },
-            warnings: [],
-          }),
+          path: "/project1/audio1",
+          type: "audiodeviceinCHOP",
+          family: "CHOP",
+          state: {
+            cook_time_ms: 0.5,
+            cook_count: 10,
+            num_chans: 2,
+            num_samples: 512,
+            errors: [],
+          },
+          parameters: { active: true, gain: 0.8 },
+          channels: { chan1: 0.25, chan2: 0.75 },
+          warnings: [],
         };
       })
       .mockImplementationOnce(async () => {
         vi.advanceTimersByTime(11);
         return {
-          stdout: JSON.stringify({
-            path: "/project1/audio1",
-            type: "audiodeviceinCHOP",
-            family: "CHOP",
-            state: {
-              cook_time_ms: 0.75,
-              cook_count: 11,
-              num_chans: 2,
-              num_samples: 512,
-              errors: [],
-            },
-            parameters: { active: true, gain: 0.8 },
-            channels: { chan1: 0.3, chan2: 0.7 },
-            warnings: [],
-          }),
+          path: "/project1/audio1",
+          type: "audiodeviceinCHOP",
+          family: "CHOP",
+          state: {
+            cook_time_ms: 0.75,
+            cook_count: 11,
+            num_chans: 2,
+            num_samples: 512,
+            errors: [],
+          },
+          parameters: { active: true, gain: 0.8 },
+          channels: { chan1: 0.3, chan2: 0.7 },
+          warnings: [],
         };
       });
 
@@ -130,14 +129,12 @@ describe("watchNodeImpl", () => {
 
   it("falls forward when channel and runtime attributes are absent", async () => {
     const exec = vi.fn(async () => ({
-      stdout: JSON.stringify({
-        path: "/project1/text1",
-        type: "textDAT",
-        family: "DAT",
-        state: { errors: [] },
-        parameters: {},
-        warnings: ["cookTime unavailable", "channels unavailable: operator has no chans() method"],
-      }),
+      path: "/project1/text1",
+      type: "textDAT",
+      family: "DAT",
+      state: { errors: [] },
+      parameters: {},
+      warnings: ["cookTime unavailable", "channels unavailable: operator has no chans() method"],
     }));
 
     const result = await watchNodeImpl(fakeCtx(exec), {

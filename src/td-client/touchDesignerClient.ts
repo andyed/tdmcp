@@ -65,6 +65,7 @@ import {
   NodeErrorsSchema,
   NodeListSchema,
   NodeRefSchema,
+  NodeRuntimeSampleSchema,
   NodeSearchResultSchema,
   OAuthConsentConsumeSchema,
   OpTypesSchema,
@@ -99,6 +100,7 @@ import {
   type TdDuplicateNode,
   type TdEditorInsertResult,
   type TdInteractionStatus,
+  type TdNodeRuntimeSample,
   type TdOpTypes,
   type TdPackageNamespaceApplyResult,
   type TdPackageNamespacePlan,
@@ -1934,6 +1936,18 @@ export class TouchDesignerClient {
       to_path: toPath,
       from_path: fromPath ?? null,
       to_input: toInput ?? null,
+    });
+  }
+
+  /** Read one runtime snapshot without requiring arbitrary bridge exec. */
+  sampleNodeRuntime(
+    path: string,
+    opts?: { parameterKeys?: string[]; channelKeys?: string[] },
+  ): Promise<TdNodeRuntimeSample> {
+    return this.request("POST", "/api/node/sample", NodeRuntimeSampleSchema, {
+      path,
+      parameter_keys: opts?.parameterKeys ?? null,
+      channel_keys: opts?.channelKeys ?? null,
     });
   }
 

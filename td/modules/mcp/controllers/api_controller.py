@@ -898,6 +898,15 @@ def _route_post_root_controls(rest, body):
             rate=body.get("rate"),
             cue_name=body.get("cueName") or body.get("cue_name"),
         )
+    if rest == ["node", "sample"]:
+        # Read-only runtime snapshot for watch_node. Unlike /api/exec,
+        # this remains available when TDMCP_BRIDGE_ALLOW_EXEC=0.
+        _require(body, "path")
+        return watch_service.sample(
+            body["path"],
+            parameter_keys=body.get("parameter_keys"),
+            channel_keys=body.get("channel_keys"),
+        )
     if rest == ["perform"]:
         # Perform-mode write — survives ALLOW_EXEC=0; read side lives in /api/system.
         _require(body, "enabled")

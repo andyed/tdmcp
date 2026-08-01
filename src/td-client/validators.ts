@@ -1266,6 +1266,18 @@ export const ParamWatchListSchema = z.object({
 });
 export type TdParamWatchList = z.infer<typeof ParamWatchListSchema>;
 
+// One runtime sample for watch_node (POST /api/node/sample).
+export const NodeRuntimeSampleSchema = z.object({
+  path: z.string(),
+  type: z.string().default(""),
+  family: z.string().optional(),
+  state: z.record(z.string(), z.unknown()).default({}),
+  parameters: z.record(z.string(), z.unknown()).default({}),
+  channels: z.record(z.string(), z.number()).default({}),
+  warnings: z.array(z.string()).default([]),
+});
+export type TdNodeRuntimeSample = z.infer<typeof NodeRuntimeSampleSchema>;
+
 // The `param.changed` event payload the bridge broadcasts on the WebSocket stream
 // for a watched operator's parameter. Validated where events are parsed so a
 // consumer gets a typed shape, not a raw wire object.

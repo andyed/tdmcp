@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { tryEndpoint } from "../../td-client/types.js";
 import { buildPayloadScript, parsePythonReport } from "../pythonReport.js";
 import { errorResult, structuredResult } from "../result.js";
 import type { ToolContext, ToolRegistrar } from "../types.js";
@@ -207,8 +208,17 @@ export async function watchNodeImpl(ctx: ToolContext, args: WatchNodeArgs) {
         parameter_keys: args.parameter_keys,
         channel_keys: args.channel_keys,
       });
-      const exec = await ctx.client.executePythonScript(script, true);
-      const report = parsePythonReport<WatchNodeProbeReport>(exec.stdout);
+      const report = await tryEndpoint<WatchNodeProbeReport>(
+        () =>
+          ctx.client.sampleNodeRuntime(args.path, {
+            parameterKeys: args.parameter_keys,
+            channelKeys: args.channel_keys,
+          }),
+        async () => {
+          const exec = await ctx.client.executePythonScript(script, true);
+          return parsePythonReport<WatchNodeProbeReport>(exec.stdout);
+        },
+      );
 
       if (report.fatal) {
         if (snapshots.length === 0) {
@@ -277,7 +287,7 @@ export const registerWatchNode: ToolRegistrar = (server, ctx) => {
     {
       title: "Watch node",
       description:
-        "Read-only: sample one TouchDesigner operator over a short interval and return runtime state, readable parameter values, and CHOP channel values when available. Missing TD attributes/channels are reported as warnings instead of failing the watch. Returns {path, requested_samples, collected_samples, interval_ms, window_ms, warnings[], snapshots[]} where each snapshot has {sample_index, elapsed_ms, path, type, family, state, parameters, channels, warnings}.",
+        "Read-only: sample one TouchDesigner operator over a short interval and return runtime state, readable parameter values, and CHOP channel values when available. Uses a structured endpoint that works with TDMCP_BRIDGE_ALLOW_EXEC=0; older bridges fall back to the exec probe. Missing TD attributes or channels are reported as warnings instead of failing the watch. Returns {path, requested_samples, collected_samples, interval_ms, window_ms, warnings[], snapshots[]} where each snapshot has {sample_index, elapsed_ms, path, type, family, state, parameters, channels, warnings}.",
       inputSchema: watchNodeSchema.shape,
       outputSchema: watchNodeOutputSchema.shape,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },

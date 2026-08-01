@@ -63,16 +63,38 @@ class FakeParGroup:
 class FakeOp:
     def __init__(self, path):
         self.path = path
+        self.type = "constantCHOP"
+        self.family = "CHOP"
+        self.cookTime = 0.25
+        self.totalCooks = 7
+        self.numChans = 0
+        self.numSamples = 1
         self.par = FakeParGroup(self)
+        self._chans = []
 
     def pars(self):
         return list(self.par._pars.values())
+
+    def chans(self):
+        return list(self._chans)
+
+    def errors(self, recurse=False):
+        return []
 
     def set(self, name, value):
         if name in self.par._pars:
             self.par._pars[name].value = value
         else:
             self.par.add(name, value)
+
+
+class FakeChannel:
+    def __init__(self, name, value):
+        self.name = name
+        self.value = value
+
+    def eval(self):
+        return self.value
 
 
 class _OpPatch:
@@ -191,6 +213,25 @@ class WatchRegistryTests(unittest.TestCase):
         self.assertTrue(ws.is_watched("/project1/level1", "opacity"))
         self.assertFalse(ws.is_watched("/project1/level1", "level"))
         self.assertFalse(ws.is_watched("/project1/other", "opacity"))
+
+    def test_sample_returns_bounded_runtime_parameters_and_channels(self):
+        node = FakeOp("/project1/audio1")
+        node.par.add("gain", 0.8)
+        node.par.add("active", True)
+        node._chans = [FakeChannel("left", 0.25), FakeChannel("right", 0.75)]
+        node.numChans = 2
+        with _OpPatch({node.path: node}):
+            report = ws.sample(node.path, parameter_keys=["gain"], channel_keys=["right"])
+        self.assertEqual(report["path"], node.path)
+        self.assertEqual(report["parameters"], {"gain": 0.8})
+        self.assertEqual(report["channels"], {"right": 0.75})
+        self.assertEqual(report["state"]["cook_count"], 7)
+        self.assertEqual(report["state"]["num_chans"], 2)
+
+    def test_sample_unknown_path_raises(self):
+        with _OpPatch({}):
+            with self.assertRaises(LookupError):
+                ws.sample("/project1/missing")
 
 
 class PollTests(unittest.TestCase):

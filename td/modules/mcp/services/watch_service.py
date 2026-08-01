@@ -184,6 +184,119 @@ def list_watches():
     }
 
 
+def _jsonable(value):
+    """Reduce a runtime value to JSON-safe data without exposing TD proxies."""
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    return str(value)
+
+
+def _runtime_state(node):
+    state = {"errors": []}
+    for attr, key, cast in (
+        ("cookTime", "cook_time_ms", float),
+        ("totalCooks", "cook_count", int),
+        ("cookCount", "cook_count", int),
+        ("cookAbsFrame", "last_cook_frame", int),
+        ("numChans", "num_chans", int),
+        ("numSamples", "num_samples", int),
+        ("gpuMemory", "gpu_memory", int),
+    ):
+        if key in state:
+            continue
+        try:
+            value = getattr(node, attr, None)
+            if value is not None:
+                state[key] = cast(value)
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        width, height = getattr(node, "width", None), getattr(node, "height", None)
+        if width is not None and height is not None:
+            state["resolution"] = [int(width), int(height)]
+    except Exception:  # noqa: BLE001
+        pass
+    return state
+
+
+def _runtime_errors(node, state, warnings):
+    try:
+        try:
+            errors = node.errors(recurse=False)
+        except TypeError:
+            errors = node.errors()
+        for error in errors or []:
+            state["errors"].extend(str(error).splitlines())
+    except Exception as exc:  # noqa: BLE001
+        warnings.append("errors unavailable: %s" % exc)
+
+
+def _sample_parameters(node, allowlist, warnings):
+    result = {}
+    try:
+        for par in node.pars():
+            try:
+                name = str(par.name)
+                if allowlist and name not in allowlist:
+                    continue
+                try:
+                    value = par.eval()
+                except Exception:  # noqa: BLE001
+                    value = getattr(par, "val", None)
+                result[name] = _jsonable(value)
+            except Exception as exc:  # noqa: BLE001
+                warnings.append("parameter unavailable: %s" % exc)
+    except Exception as exc:  # noqa: BLE001
+        warnings.append("parameters unavailable: %s" % exc)
+    return result
+
+
+def _sample_channels(node, allowlist, warnings):
+    result = {}
+    try:
+        for channel in node.chans():
+            try:
+                name = str(channel.name)
+                if allowlist and name not in allowlist:
+                    continue
+                value = channel.eval()
+                if value is not None:
+                    result[name] = float(value)
+            except Exception as exc:  # noqa: BLE001
+                warnings.append("channel unavailable: %s" % exc)
+    except Exception as exc:  # noqa: BLE001
+        warnings.append("channels unavailable: %s" % exc)
+    return result
+
+
+def sample(path, parameter_keys=None, channel_keys=None):
+    """Return one runtime snapshot without arbitrary code execution."""
+    import td
+
+    node = td.op(path)
+    if node is None:
+        raise LookupError(path)
+    warnings = []
+    state = _runtime_state(node)
+    _runtime_errors(node, state, warnings)
+    report = {
+        "path": str(node.path),
+        "type": str(getattr(node, "type", "")),
+        "state": state,
+        "parameters": _sample_parameters(node, set(parameter_keys or []), warnings),
+        "channels": _sample_channels(node, set(channel_keys or []), warnings),
+        "warnings": warnings,
+    }
+    family = getattr(node, "family", None)
+    if family is not None:
+        report["family"] = str(family)
+    return report
+
+
 def clear():
     """Drop every watch + snapshot + emit state. Used by tests and a full unwatch."""
     _WATCHES.clear()
