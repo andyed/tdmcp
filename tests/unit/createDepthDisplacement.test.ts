@@ -3,7 +3,10 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { KnowledgeBase } from "../../src/knowledge/index.js";
 import { RecipeLibrary } from "../../src/recipes/loader.js";
 import { TouchDesignerClient } from "../../src/td-client/touchDesignerClient.js";
-import { createDepthDisplacementImpl } from "../../src/tools/layer1/createDepthDisplacement.js";
+import {
+  createDepthDisplacementImpl,
+  createDepthDisplacementSchema,
+} from "../../src/tools/layer1/createDepthDisplacement.js";
 import type { ToolContext } from "../../src/tools/types.js";
 import { silentLogger } from "../../src/utils/logger.js";
 import { makeTdServer, TD_BASE } from "../helpers/tdMock.js";
@@ -168,5 +171,33 @@ describe("create_depth_displacement", () => {
       rows: 64,
       cols: 64,
     });
+  });
+
+  it("bridges an existing TOP through a Select TOP inside the generated container", async () => {
+    const bodies = captureCreateBodies();
+    await createDepthDisplacementImpl(makeCtx(), {
+      source: "existing_top",
+      existing_top_path: "/project1/PsychodeliPeacock/OUT_VIDEO",
+      subdivisions: 64,
+      depth: 2,
+      invert: false,
+      expose_controls: false,
+      parent_path: "/project1",
+    });
+
+    const videoin = bodies.find((body) => body.name === "videoin");
+    expect(videoin?.type).toBe("selectTOP");
+    expect(videoin?.parent_path).toMatch(/\/depth_displacement$/);
+    expect(videoin?.parameters).toMatchObject({
+      top: "/project1/PsychodeliPeacock/OUT_VIDEO",
+    });
+  });
+
+  it("requires existing_top_path when source='existing_top'", () => {
+    const result = createDepthDisplacementSchema.safeParse({ source: "existing_top" });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.path[0] === "existing_top_path")).toBe(true);
+    }
   });
 });

@@ -10,68 +10,91 @@ import type { ToolContext, ToolRegistrar } from "../types.js";
 
 const q = (value: string): string => JSON.stringify(value);
 
-export const createDepthDisplacementSchema = z.object({
-  source: z
-    .enum(["camera", "file", "synthetic", "existing_top"])
-    .default("synthetic")
-    .describe(
-      "Depth/luminance source that drives the relief. 'camera' = live webcam/capture device (creating it may pop a one-time macOS camera-permission dialog — click Allow). 'file' = a movie file. 'synthetic' = an animated noise pattern, so the relief moves and the chain is testable without any device permission (the default). 'existing_top' = displace by a TOP you already have (e.g. a real depth map).",
-    ),
-  movie_file_path: z
-    .string()
-    .optional()
-    .describe("Path to a movie file to play as the source; used only when source='file'."),
-  existing_top_path: z
-    .string()
-    .optional()
-    .describe(
-      "Path of an existing TOP to sample as the height map; used only when source='existing_top'.",
-    ),
-  subdivisions: z.coerce
-    .number()
-    .int()
-    .min(2)
-    .default(100)
-    .describe(
-      "Grid resolution (rows = cols). Higher = finer relief and smoother displacement, but more vertices to push. 100 gives a 100×100 plane.",
-    ),
-  depth: z.coerce
-    .number()
-    .min(0)
-    .default(1)
-    .describe(
-      "Displacement amount along Z: how far bright (or dark, if inverted) pixels push the surface out of the plane. 0 = flat.",
-    ),
-  invert: z
-    .boolean()
-    .default(false)
-    .describe(
-      "Flip the height mapping. false = bright pixels push toward the camera (bright = near); true = dark pixels push toward the camera (dark = near).",
-    ),
-  expose_controls: z
-    .boolean()
-    .default(true)
-    .describe(
-      "When true (default), expose live Depth (displacement amount) and Zoom (camera distance) knobs.",
-    ),
-  parent_path: z
-    .string()
-    .default("/project1")
-    .describe("Parent network where the displacement container is created (default '/project1')."),
-});
+export const createDepthDisplacementSchema = z
+  .object({
+    source: z
+      .enum(["camera", "file", "synthetic", "existing_top"])
+      .default("synthetic")
+      .describe(
+        "Depth/luminance source that drives the relief. 'camera' = live webcam/capture device (creating it may pop a one-time macOS camera-permission dialog — click Allow). 'file' = a movie file. 'synthetic' = an animated noise pattern, so the relief moves and the chain is testable without any device permission (the default). 'existing_top' = displace by a TOP you already have (e.g. a real depth map).",
+      ),
+    movie_file_path: z
+      .string()
+      .optional()
+      .describe("Path to a movie file to play as the source; used only when source='file'."),
+    existing_top_path: z
+      .string()
+      .optional()
+      .describe(
+        "Path of an existing TOP to sample as the height map; used only when source='existing_top'.",
+      ),
+    subdivisions: z.coerce
+      .number()
+      .int()
+      .min(2)
+      .default(100)
+      .describe(
+        "Grid resolution (rows = cols). Higher = finer relief and smoother displacement, but more vertices to push. 100 gives a 100×100 plane.",
+      ),
+    depth: z.coerce
+      .number()
+      .min(0)
+      .default(1)
+      .describe(
+        "Displacement amount along Z: how far bright (or dark, if inverted) pixels push the surface out of the plane. 0 = flat.",
+      ),
+    invert: z
+      .boolean()
+      .default(false)
+      .describe(
+        "Flip the height mapping. false = bright pixels push toward the camera (bright = near); true = dark pixels push toward the camera (dark = near).",
+      ),
+    expose_controls: z
+      .boolean()
+      .default(true)
+      .describe(
+        "When true (default), expose live Depth (displacement amount) and Zoom (camera distance) knobs.",
+      ),
+    parent_path: z
+      .string()
+      .default("/project1")
+      .describe(
+        "Parent network where the displacement container is created (default '/project1').",
+      ),
+  })
+  .superRefine((args, ctx) => {
+    if (args.source === "existing_top" && !args.existing_top_path?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["existing_top_path"],
+        message: "existing_top_path is required when source='existing_top'.",
+      });
+    }
+    if (args.source === "file" && !args.movie_file_path?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["movie_file_path"],
+        message: "movie_file_path is required when source='file'.",
+      });
+    }
+  });
 type CreateDepthDisplacementArgs = z.infer<typeof createDepthDisplacementSchema>;
 
 /**
  * Builds the depth/luminance source TOP, mirroring create_motion_reactive's buildSource:
  * camera → Video Device In, file → Movie File In (playing), synthetic → an animated Noise
- * (a tz expression scrolls it so the relief breathes), existing_top → the given path.
+ * (a tz expression scrolls it so the relief breathes), existing_top → a local Select TOP.
+ *
+ * TouchDesigner connector wires cannot cross COMP boundaries. The generated system lives in a
+ * fresh baseCOMP, so returning an arbitrary existing TOP path and wiring it directly will fail.
+ * Create a Select TOP inside the generated COMP and point it at the external source.
  */
 async function buildSource(
   builder: NetworkBuilder,
   args: CreateDepthDisplacementArgs,
 ): Promise<string> {
   if (args.source === "existing_top" && args.existing_top_path) {
-    return args.existing_top_path;
+    return builder.add("selectTOP", "videoin", { top: args.existing_top_path });
   }
   if (args.source === "file") {
     return builder.add("moviefileinTOP", "videoin", {
