@@ -8,7 +8,7 @@ export const controlTimelineTransportSchema = z.object({
   action: z
     .enum(["play", "pause", "seek", "cue", "rate"])
     .describe(
-      "Transport verb: play — start playback; pause — stop playback; seek — jump to a frame; cue — jump to a named cue point; rate — set playback rate.",
+      "Transport verb: play — start playback; pause — stop playback; seek — jump to a frame; cue — compatibility verb that directs callers to manage_cue; rate — set timeline frames per second.",
     ),
   frame: z
     .number()
@@ -20,9 +20,12 @@ export const controlTimelineTransportSchema = z.object({
     .positive()
     .optional()
     .describe(
-      "Playback rate multiplier for rate (required when action='rate'). 1.0=normal, 0.5=half, 2.0=double.",
+      "Timeline frame rate in frames per second (required when action='rate'; commonly 24, 30, or 60).",
     ),
-  cueName: z.string().optional().describe("Named cue point for cue (required when action='cue')."),
+  cueName: z
+    .string()
+    .optional()
+    .describe("Cue label included in the compatibility error when action='cue'."),
 });
 
 export type ControlTimelineTransportArgs = z.infer<typeof controlTimelineTransportSchema>;
@@ -43,32 +46,30 @@ _payload_b64 = "__PAYLOAD_B64__"
 PAYLOAD = json.loads(base64.b64decode(_payload_b64).decode("utf-8"))
 
 _action = PAYLOAD["action"]
+_time = op('/').time
 
 if _action == "play":
-    project.play = True
+    _time.play = True
 elif _action == "pause":
-    project.play = False
+    _time.play = False
 elif _action == "seek":
-    _target = max(project.startFrame, min(int(PAYLOAD["frame"]), project.endFrame))
-    me.time.frame = _target
+    _target = max(_time.start, min(int(PAYLOAD["frame"]), _time.end))
+    _time.frame = _target
 elif _action == "cue":
     _name = PAYLOAD["cueName"]
-    try:
-        project.cue(_name)
-    except Exception:
-        raise RuntimeError(f"cue '{_name}' not found")
+    raise RuntimeError(f"TouchDesigner's root timeline has no named-cue API; use manage_cue to recall '{_name}'")
 elif _action == "rate":
-    project.rate = float(PAYLOAD["rate"])
+    _time.rate = float(PAYLOAD["rate"])
 
 import json as _json
 result = {
     "action": PAYLOAD["action"],
-    "play": bool(project.play),
-    "frame": int(me.time.frame),
-    "rate": float(project.rate),
-    "startFrame": int(project.startFrame),
-    "endFrame": int(project.endFrame),
-    "fps": float(project.cookRate),
+    "play": bool(_time.play),
+    "frame": int(_time.frame),
+    "rate": float(_time.rate),
+    "startFrame": int(_time.start),
+    "endFrame": int(_time.end),
+    "fps": float(_time.rate),
 }
 print(_json.dumps(result))
 `.trim();
@@ -120,7 +121,7 @@ export async function controlTimelineTransportImpl(
       );
     },
     (state) => {
-      const msg = `Timeline ${state.action} (frame ${state.frame}, rate ${state.rate.toFixed(2)}x, ${state.fps} fps)`;
+      const msg = `Timeline ${state.action} (frame ${state.frame}, ${state.fps} fps)`;
       return structuredResult(msg, state);
     },
   );
@@ -132,7 +133,7 @@ export const registerControlTimelineTransport: ToolRegistrar = (server, ctx) =>
     {
       title: "Control Timeline Transport",
       description:
-        "Drive the TouchDesigner project timeline: play, pause, seek to a frame, jump to a named cue, or set playback rate. Returns the timeline state after the action so a copilot can verify the change took effect. NOTE: pausing will freeze any downstream motion/feedback/frame-diff chain — expected behaviour, not a bug.",
+        "Drive TouchDesigner's root timeline: play, pause, seek to a frame, or set its frame rate. The legacy cue verb returns an error because root time has no named-cue API; use manage_cue for scene cues. Returns the resulting timeline state. NOTE: pausing will freeze any downstream motion/feedback/frame-diff chain — expected behaviour, not a bug.",
       inputSchema: controlTimelineTransportSchema.shape,
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },

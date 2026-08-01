@@ -6,11 +6,11 @@ module imports cleanly off-TD (mirrors ``mcp/services/api_service.py``). Raise
 ``{ok:false,error:{message}}`` envelope.
 
 Verbs (exhaustive, matches the Node-side tool schema):
-  - ``play``  -> ``project.play = True``
-  - ``pause`` -> ``project.play = False``
-  - ``seek``  -> ``me.time.frame = clamp(frame, [startFrame, endFrame])``
-  - ``cue``   -> ``project.cue(name)`` (rejected if the cue is unknown)
-  - ``rate``  -> ``project.rate = float(rate)``
+  - ``play``  -> ``op('/').time.play = True``
+  - ``pause`` -> ``op('/').time.play = False``
+  - ``seek``  -> ``op('/').time.frame = clamp(frame, [start, end])``
+  - ``cue``   -> rejected with a message directing callers to manage_cue
+  - ``rate``  -> ``op('/').time.rate = float(rate)`` (frames per second)
 
 Returns the §3.x timeline-state dict the Node tool already emits — same shape as
 the legacy exec path, so the rewired tool can collapse both branches into one
@@ -18,52 +18,56 @@ result handler.
 """
 
 
+def _root_time(td):
+    """Return the project's authoritative root ``timeCOMP``."""
+    root = td.op("/")
+    if root is None or getattr(root, "time", None) is None:
+        raise RuntimeError("TouchDesigner root timeline is unavailable")
+    return root.time
+
+
 def _state(td):
     """Snapshot the live timeline state in the documented shape."""
-    project = td.project
+    timeline = _root_time(td)
     return {
-        "play": bool(project.play),
-        "frame": int(td.me.time.frame)
-        if hasattr(td, "me")
-        else int(project.startFrame),
-        "rate": float(project.rate),
-        "startFrame": int(project.startFrame),
-        "endFrame": int(project.endFrame),
-        "fps": float(getattr(project, "cookRate", 60.0)),
+        "play": bool(timeline.play),
+        "frame": int(timeline.frame),
+        "rate": float(timeline.rate),
+        "startFrame": int(timeline.start),
+        "endFrame": int(timeline.end),
+        "fps": float(timeline.rate),
     }
 
 
 def _play(td, _frame, _rate, _cue_name):
-    td.project.play = True
+    _root_time(td).play = True
 
 
 def _pause(td, _frame, _rate, _cue_name):
-    td.project.play = False
+    _root_time(td).play = False
 
 
 def _seek(td, frame, _rate, _cue_name):
     if frame is None:
         raise ValueError("seek requires `frame`.")
-    project = td.project
-    target = max(int(project.startFrame), min(int(frame), int(project.endFrame)))
-    # ``me.time.frame`` is the documented way to scrub; project.frame is read-only
-    # on some builds. The router does not have ``me`` in scope, so reach via ``td``.
-    td.me.time.frame = target
+    timeline = _root_time(td)
+    target = max(int(timeline.start), min(int(frame), int(timeline.end)))
+    timeline.frame = target
 
 
 def _cue(td, _frame, _rate, cue_name):
     if not cue_name:
         raise ValueError("cue requires `cueName`.")
-    try:
-        td.project.cue(cue_name)
-    except Exception as exc:  # noqa: BLE001
-        raise ValueError("cue %r not found" % cue_name) from exc
+    raise ValueError(
+        "TouchDesigner's root timeline has no named-cue API; "
+        "use the manage_cue tool to recall %r." % cue_name
+    )
 
 
 def _rate(td, _frame, rate, _cue_name):
     if rate is None:
         raise ValueError("rate requires `rate`.")
-    td.project.rate = float(rate)
+    _root_time(td).rate = float(rate)
 
 
 _ACTIONS = {

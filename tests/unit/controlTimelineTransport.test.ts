@@ -32,7 +32,7 @@ function makeStdout(action: string): string {
     action,
     play: action === "play",
     frame: 142,
-    rate: 1.0,
+    rate: 60,
     startFrame: 0,
     endFrame: 600,
     fps: 60,
@@ -109,7 +109,7 @@ describe("controlTimelineTransportImpl", () => {
   });
 
   describe("script source contains expected branch token", () => {
-    it("play script contains `project.play = True`", async () => {
+    it("play script targets root time", async () => {
       let capturedScript = "";
       server.use(
         http.post(`${TD_BASE}/api/exec`, async ({ request }) => {
@@ -121,10 +121,11 @@ describe("controlTimelineTransportImpl", () => {
         }),
       );
       await controlTimelineTransportImpl(makeCtx(), { action: "play" });
-      expect(capturedScript).toContain("project.play = True");
+      expect(capturedScript).toContain("_time = op('/').time");
+      expect(capturedScript).toContain("_time.play = True");
     });
 
-    it("pause script contains `project.play = False`", async () => {
+    it("pause script targets root time", async () => {
       let capturedScript = "";
       server.use(
         http.post(`${TD_BASE}/api/exec`, async ({ request }) => {
@@ -136,10 +137,10 @@ describe("controlTimelineTransportImpl", () => {
         }),
       );
       await controlTimelineTransportImpl(makeCtx(), { action: "pause" });
-      expect(capturedScript).toContain("project.play = False");
+      expect(capturedScript).toContain("_time.play = False");
     });
 
-    it("seek script contains `me.time.frame =`", async () => {
+    it("seek script sets the root timeline frame", async () => {
       let capturedScript = "";
       server.use(
         http.post(`${TD_BASE}/api/exec`, async ({ request }) => {
@@ -151,10 +152,10 @@ describe("controlTimelineTransportImpl", () => {
         }),
       );
       await controlTimelineTransportImpl(makeCtx(), { action: "seek", frame: 120 });
-      expect(capturedScript).toContain("me.time.frame =");
+      expect(capturedScript).toContain("_time.frame =");
     });
 
-    it("cue script contains `project.cue(`", async () => {
+    it("cue script returns an error directing callers to manage_cue", async () => {
       let capturedScript = "";
       server.use(
         http.post(`${TD_BASE}/api/exec`, async ({ request }) => {
@@ -166,10 +167,10 @@ describe("controlTimelineTransportImpl", () => {
         }),
       );
       await controlTimelineTransportImpl(makeCtx(), { action: "cue", cueName: "verse" });
-      expect(capturedScript).toContain("project.cue(");
+      expect(capturedScript).toContain("use manage_cue");
     });
 
-    it("rate script contains `project.rate =`", async () => {
+    it("rate script sets root time frames per second", async () => {
       let capturedScript = "";
       server.use(
         http.post(`${TD_BASE}/api/exec`, async ({ request }) => {
@@ -181,24 +182,24 @@ describe("controlTimelineTransportImpl", () => {
         }),
       );
       await controlTimelineTransportImpl(makeCtx(), { action: "rate", rate: 0.5 });
-      expect(capturedScript).toContain("project.rate =");
+      expect(capturedScript).toContain("_time.rate =");
     });
   });
 
   describe("happy path — structured result echoes timeline state", () => {
-    it("play returns structuredContent with all fields + message includes frame/rate/fps", async () => {
+    it("play returns structuredContent with all fields and reports frame rate once", async () => {
       mockExec("play");
       const result = await controlTimelineTransportImpl(makeCtx(), { action: "play" });
       expect(result.isError).toBeFalsy();
       const msg = textOf(result);
       expect(msg).toContain("142"); // frame
-      expect(msg).toContain("1.00x"); // rate
-      expect(msg).toContain("60"); // fps
+      expect(msg).toContain("60 fps");
+      expect(msg).not.toContain("x");
       const sc = result.structuredContent as Record<string, unknown>;
       expect(sc.action).toBe("play");
       expect(sc.play).toBe(true);
       expect(sc.frame).toBe(142);
-      expect(sc.rate).toBe(1.0);
+      expect(sc.rate).toBe(60);
       expect(sc.startFrame).toBe(0);
       expect(sc.endFrame).toBe(600);
       expect(sc.fps).toBe(60);
@@ -220,7 +221,7 @@ describe("controlTimelineTransportImpl", () => {
               action: "seek",
               play: false,
               frame: 120,
-              rate: 1.0,
+              rate: 60,
               startFrame: 0,
               endFrame: 600,
               fps: 60,
